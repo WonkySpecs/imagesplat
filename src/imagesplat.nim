@@ -108,6 +108,43 @@ func thresholded(img: Image[ColorRGBU], thresh: uint8): Image[ColorRGBU] =
       result.data[i].g = v
       result.data[i].b = v
 
+const
+  lightShade = "\u2591"
+  midShade = "\u2592"
+  darkShade = "\u2593"
+  maxVal = 255 * 3
+func toShade(cols: seq[ColorRGBU]): string =
+  let avgTotal = averageColor(cols).colorValueTotal()
+  return if maxVal / avgTotal >= 2.8:
+    lightShade
+  elif maxVal / avgTotal >= 2:
+    midShade
+  else:
+    darkShade
+
+proc asShadeString(img: Image[ColorRGBU], w, h: int): string =
+  let
+    bw = img.width div w
+    bh = img.height div h
+    groupFn = rectsGrouper(img.width, img.height, bw, bh)
+
+  var groups = initTable[int, seq[ColorRGBU]]()
+  for j in 0..<img.height:
+    let offset = j * img.width
+    for i in 0..<img.width:
+      let group = groupFn(i, j)
+      if not groups.hasKey(group):
+        groups[group] = newSeq[ColorRGBU]()
+      groups[group].add img.data[offset + i]
+
+  let combined = collect(initTable(groups.len)):
+    for g, vs in groups.pairs: { g: toShade(vs) }
+
+  for j in 0..<h:
+    for i in 0..<w:
+      result &= combined[j * w + i]
+    result &= '\n'
+
 when isMainModule:
   let pngIn = if paramCount() > 0: paramStr(1)
               else: "flamingo"
@@ -116,6 +153,8 @@ when isMainModule:
   brightPixelated.savePNG(fmt"images/{pngIn}-bright-pixellated.png")
   let sectoredCircles = img.apply(circleGrouper(img.width, img.height, 8, 3), averageColor)
   sectoredCircles.savePNG(fmt"images/{pngIn}-sectored.png")
+  echo img.asShadeString(80, 30)
+  echo pngIn, " in ", lightShade, midShade, darkShade
 
   # for cw in @[10, 25, 50]:
   #   for ch in @[10, 25, 50]:
