@@ -1,32 +1,8 @@
-import strformat, math, sequtils, tables, sugar, random
+import strformat, math, sequtils, tables, sugar, random, os
 import imageman
 import imageman/kernels
 
 randomize()
-
-# This takes and returns Image[ColorRGBU] but only uses the r value in the input,
-# and sets the output rgbs to the same value because Image[ColorGU] doesn't seem to be well supported
-func thresholded(img: Image[ColorRGBU], thresh: uint8): Image[ColorRGBU] =
-  result = initImage[ColorRGBU](img.width, img.height)
-  for i in 0 .. img.data.high:
-      let v: uint8 = if img.data[i].r > thresh: 255
-                     else: 0
-      result.data[i].r = v
-      result.data[i].g = v
-      result.data[i].b = v
-
-func averageColor(cs: seq[ColorRGBU]) : ColorRGBU =
-  if cs.len == 0:
-    return [0'u8, 0'u8, 0'u8].ColorRGBU
-  var
-    rSum = 0
-    gSum = 0
-    bSum = 0
-  for c in cs:
-    rSum += c.r.int
-    gSum += c.g.int
-    bSum += c.b.int
-  return [(rSum div cs.len).uint8, (gSum div cs.len).uint8, (bSum div cs.len).uint8].ColorRGBU
 
 type
   PixelGrouper = proc(x, y: int): int
@@ -57,6 +33,19 @@ proc apply(img: Image[ColorRGBU],
       let group = groupFn(i, j)
       result.data[offset + i] = combined[group]
 
+func averageColor(cs: seq[ColorRGBU]) : ColorRGBU =
+  if cs.len == 0:
+    return [0'u8, 0'u8, 0'u8].ColorRGBU
+  var
+    rSum = 0
+    gSum = 0
+    bSum = 0
+  for c in cs:
+    rSum += c.r.int
+    gSum += c.g.int
+    bSum += c.b.int
+  return [(rSum div cs.len).uint8, (gSum div cs.len).uint8, (bSum div cs.len).uint8].ColorRGBU
+
 func maxBy(f: proc(c: ColorRGBU): int): ColorCombiner =
   result = proc(cols: seq[ColorRGBU]): ColorRGBU =
     cols[map[ColorRGBU, int](cols, f).maxIndex]
@@ -65,11 +54,7 @@ func minBy(f: proc(c: ColorRGBU): int): ColorCombiner =
   result = proc(cols: seq[ColorRGBU]): ColorRGBU =
     cols[map[ColorRGBU, int](cols, f).minIndex]
 
-func absMax(): ColorCombiner =
-  maxBy(proc(c: ColorRGBU): int = c.r.int + c.g.int + c.b.int)
-
-func absMin(): ColorCombiner =
-  minBy(proc(c: ColorRGBU): int = c.r.int + c.g.int + c.b.int)
+func colorValueTotal(c: ColorRGBU): int = c.r.int + c.g.int + c.b.int
 
 func rectsGrouper(imgW, imgH, rectW, rectH: int): PixelGrouper =
   let
@@ -82,15 +67,20 @@ func rectsGrouper(imgW, imgH, rectW, rectH: int): PixelGrouper =
     result = ry * widthInRects.int + rx
   result = grouper
 
-func quadrant(x, y: int): int =
-  result = if x > 0:
+#[ if o = (0, 0), get which quadrant number (x, y) is in
+   4|1
+   -o-
+   3|2
+]#
+template quadrant(x, y: int): int =
+  if x > 0:
     if y > 0: 1
     else: 2
   else:
     if y > 0: 4
     else: 3
 
-func circleGrouper(imgW, imgH, circleThickness: int): PixelGrouper =
+func circleGrouper(imgW, imgH, circleThickness: int, sectorMod=0): PixelGrouper =
   let
     cx = (imgW div 2)
     cy = (imgH div 2)
@@ -102,17 +92,30 @@ func circleGrouper(imgW, imgH, circleThickness: int): PixelGrouper =
 
     let r = sqrt((ox^2 + oy^2).float).int
     let cn = r div circleThickness
-    let quad = if cn mod 2 == 0: 0
+    let quad = if sectorMod == 0 or cn mod sectorMod > 0: 0
                else: quadrant(ox, oy)
     result = cn * 5 + quad
-
   result = grouper
 
+# This takes and returns Image[ColorRGBU] but only uses the r value in the input,
+# and sets the output rgbs to the same value because Image[ColorGU] doesn't seem to be well supported
+func thresholded(img: Image[ColorRGBU], thresh: uint8): Image[ColorRGBU] =
+  result = initImage[ColorRGBU](img.width, img.height)
+  for i in 0 .. img.data.high:
+      let v: uint8 = if img.data[i].r > thresh: 255
+                     else: 0
+      result.data[i].r = v
+      result.data[i].g = v
+      result.data[i].b = v
+
 when isMainModule:
-  var img = loadImage[ColorRGBU]("images/flamingo.png")
-  #let res = img.apply(rectsGrouper(img.width, img.height, 60, 10), absMax())
-  let res = img.apply(circleGrouper(img.width, img.height, 8), averageColor)
-  res.savePNG("images/test")
+  let pngIn = if paramCount() > 0: paramStr(1)
+              else: "flamingo"
+  var img = loadImage[ColorRGBU](fmt"images/{pngIn}.png")
+  let brightPixelated = img.apply(rectsGrouper(img.width, img.height, 60, 10), maxBy(colorValueTotal))
+  brightPixelated.savePNG(fmt"images/{pngIn}-bright-pixellated.png")
+  let sectoredCircles = img.apply(circleGrouper(img.width, img.height, 8, 3), averageColor)
+  sectoredCircles.savePNG(fmt"images/{pngIn}-sectored.png")
 
   # for cw in @[10, 25, 50]:
   #   for ch in @[10, 25, 50]:
