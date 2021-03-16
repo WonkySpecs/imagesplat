@@ -53,6 +53,17 @@ proc apply(img: Image[ColorRGBU],
       let group = groupFn(i, j)
       result.data[offset + i] = combined[group]
 
+func absMax(cols: seq[ColorRGBU]): ColorRGBU =
+  var
+    maxSum = 0
+    maxC: ColorRGBU
+  for c in cols:
+    let sum = c.r.int + c.g.int + c.b.int
+    if sum > maxSum:
+      maxSum = sum
+      maxC = c
+  result = maxC
+
 proc rectsGrouper(imgW, imgH, rectW, rectH: int): proc(x, y: int): int =
   let
     widthInRects = ceil(imgW / rectW)
@@ -66,7 +77,7 @@ proc rectsGrouper(imgW, imgH, rectW, rectH: int): proc(x, y: int): int =
 
 when isMainModule:
   var img = loadImage[ColorRGBU]("images/humming-bird.png")
-  let res = img.apply(rectsGrouper(img.width, img.height, 20, 20), averageColor)
+  let res = img.apply(rectsGrouper(img.width, img.height, 20, 20), absMax)
   res.savePNG("images/test")
 
   # for cw in @[10, 25, 50]:
