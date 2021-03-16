@@ -82,6 +82,14 @@ func rectsGrouper(imgW, imgH, rectW, rectH: int): PixelGrouper =
     result = ry * widthInRects.int + rx
   result = grouper
 
+func quadrant(x, y: int): int =
+  result = if x > 0:
+    if y > 0: 1
+    else: 2
+  else:
+    if y > 0: 4
+    else: 3
+
 func circleGrouper(imgW, imgH, circleThickness: int): PixelGrouper =
   let
     cx = (imgW div 2)
@@ -93,13 +101,17 @@ func circleGrouper(imgW, imgH, circleThickness: int): PixelGrouper =
       oy = y - cy
 
     let r = sqrt((ox^2 + oy^2).float).int
-    result = r div circleThickness
+    let cn = r div circleThickness
+    let quad = if cn mod 2 == 0: 0
+               else: quadrant(ox, oy)
+    result = cn * 5 + quad
+
   result = grouper
 
 when isMainModule:
-  var img = loadImage[ColorRGBU]("images/humming-bird.png")
+  var img = loadImage[ColorRGBU]("images/flamingo.png")
   #let res = img.apply(rectsGrouper(img.width, img.height, 60, 10), absMax())
-  let res = img.apply(circleGrouper(img.width, img.height, 30), averageColor)
+  let res = img.apply(circleGrouper(img.width, img.height, 8), averageColor)
   res.savePNG("images/test")
 
   # for cw in @[10, 25, 50]:
