@@ -28,9 +28,13 @@ func averageColor(cs: seq[ColorRGBU]) : ColorRGBU =
     bSum += c.b.int
   return [(rSum div cs.len).uint8, (gSum div cs.len).uint8, (bSum div cs.len).uint8].ColorRGBU
 
+type
+  PixelGrouper = proc(x, y: int): int
+  ColorCombiner = proc(cols: seq[ColorRGBU]): ColorRGBU
+
 proc apply(img: Image[ColorRGBU],
-           groupFn: proc(x, y: int): int,
-           combineFn: proc(cols: seq[ColorRGBU]): ColorRGBU): Image[ColorRGBU] =
+           groupFn: PixelGrouper,
+           combineFn: ColorCombiner): Image[ColorRGBU] =
   let seed = rand(1..100_000)
   randomize(seed)
   var groups = initTable[int, seq[ColorRGBU]]()
@@ -53,31 +57,49 @@ proc apply(img: Image[ColorRGBU],
       let group = groupFn(i, j)
       result.data[offset + i] = combined[group]
 
-func absMax(cols: seq[ColorRGBU]): ColorRGBU =
-  var
-    maxSum = 0
-    maxC: ColorRGBU
-  for c in cols:
-    let sum = c.r.int + c.g.int + c.b.int
-    if sum > maxSum:
-      maxSum = sum
-      maxC = c
-  result = maxC
+func maxBy(f: proc(c: ColorRGBU): int): ColorCombiner =
+  result = proc(cols: seq[ColorRGBU]): ColorRGBU =
+    cols[map[ColorRGBU, int](cols, f).maxIndex]
 
-proc rectsGrouper(imgW, imgH, rectW, rectH: int): proc(x, y: int): int =
+func minBy(f: proc(c: ColorRGBU): int): ColorCombiner =
+  result = proc(cols: seq[ColorRGBU]): ColorRGBU =
+    cols[map[ColorRGBU, int](cols, f).minIndex]
+
+func absMax(): ColorCombiner =
+  maxBy(proc(c: ColorRGBU): int = c.r.int + c.g.int + c.b.int)
+
+func absMin(): ColorCombiner =
+  minBy(proc(c: ColorRGBU): int = c.r.int + c.g.int + c.b.int)
+
+func rectsGrouper(imgW, imgH, rectW, rectH: int): PixelGrouper =
   let
     widthInRects = ceil(imgW / rectW)
     heightInRects = ceil(imgH / rectH)
 
-  proc grouper(x, y: int): int =
+  func grouper(x, y: int): int =
     let rx = floor((x / imgW) * widthInRects).int
     let ry = floor((y / imgH) * heightInRects).int
     result = ry * widthInRects.int + rx
-  return grouper
+  result = grouper
+
+func circleGrouper(imgW, imgH, circleThickness: int): PixelGrouper =
+  let
+    cx = (imgW div 2)
+    cy = (imgH div 2)
+
+  func grouper(x, y: int): int =
+    let
+      ox = x - cx
+      oy = y - cy
+
+    let r = sqrt((ox^2 + oy^2).float).int
+    result = r div circleThickness
+  result = grouper
 
 when isMainModule:
   var img = loadImage[ColorRGBU]("images/humming-bird.png")
-  let res = img.apply(rectsGrouper(img.width, img.height, 20, 20), absMax)
+  #let res = img.apply(rectsGrouper(img.width, img.height, 60, 10), absMax())
+  let res = img.apply(circleGrouper(img.width, img.height, 30), averageColor)
   res.savePNG("images/test")
 
   # for cw in @[10, 25, 50]:
